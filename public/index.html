@@ -332,9 +332,33 @@
     .tool-options{position:fixed; left:0; right:0; bottom:64px; z-index:44; border-top:1px solid var(--line); border-bottom:none;}
     .statusbar{display:none;}
   }
+
+  /* ---------- Acesso (login por link + assinatura) ---------- */
+  .access-gate{
+    position:fixed; inset:0; z-index:80; background:var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .access-card{
+    background:#fff; border-radius:var(--radius-lg); box-shadow:0 12px 32px rgba(27,31,35,.15);
+    padding:36px 28px; width:100%; max-width:400px; text-align:center;
+  }
+  .access-card svg.big{width:36px; height:36px; color:var(--green); margin-bottom:14px;}
+  .access-card h2{font-size:20px; font-weight:800; margin-bottom:8px;}
+  .access-card p{font-size:13.5px; color:var(--ink-soft); line-height:1.6; margin-bottom:20px;}
+  .access-card input{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:13px 14px;
+    font-size:15px; margin-bottom:12px; text-align:center;
+  }
+  .access-price{font-size:30px; font-weight:800; margin:6px 0 2px;}
+  .access-price small{font-size:14px; font-weight:600; color:var(--ink-soft);}
+  .access-trial-badge{
+    display:inline-block; background:var(--green-tint); color:var(--green-dark); font-weight:700;
+    font-size:12px; padding:5px 12px; border-radius:999px; margin-bottom:16px;
+  }
 </style>
 </head>
 <body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <header class="topbar">
   <div class="brand">
@@ -391,10 +415,10 @@
     </div>
 
     <div class="trust-row">
-      <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>100% gratuito</span>
-      <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Sem cadastro</span>
+      <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>7 dias grátis</span>
+      <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Sem senha</span>
       <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Funciona no celular</span>
-      <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Arquivo não sai do aparelho</span>
+      <span class="trust-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Uso ilimitado</span>
     </div>
   </section>
 
@@ -476,7 +500,7 @@
       <div class="faq" id="faq">
         <div class="faq-item">
           <button class="faq-q">O EDITA BRASIL é mesmo gratuito?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
-          <div class="faq-a"><p>Sim, totalmente gratuito e sem necessidade de criar conta.</p></div>
+          <div class="faq-a"><p>Você pode usar grátis por 7 dias. Depois do teste, o acesso ilimitado custa R$ 19,90/mês — cancele quando quiser, sem multa.</p></div>
         </div>
         <div class="faq-item">
           <button class="faq-q">Meu PDF fica salvo em algum servidor?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
@@ -569,8 +593,10 @@
 
 <div class="statusbar" id="statusbar" hidden>
   <div id="statusLeft">Nenhum documento carregado</div>
-  <div id="statusRight">EDITA BRASIL · gratuito e sem cadastro</div>
+  <div id="statusRight">EDITA BRASIL</div>
 </div>
+
+<div class="access-gate" id="accessGate" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
@@ -600,6 +626,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     undoBtn: document.getElementById('undoBtn'),
     statusbar: document.getElementById('statusbar'),
     statusLeft: document.getElementById('statusLeft'),
+    accessGate: document.getElementById('accessGate'),
   };
 
   const COLORS = ['#1B1F23', '#D64545', '#1C3F94', '#0E8A46'];
@@ -609,7 +636,14 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
   // O site e o servidor agora moram juntos (mesmo endereco), entao nao
   // precisamos apontar para nenhuma URL externa.
   const PAYMENT_API_BASE = '';
-  const PRICE_LABEL = 'R$ 9,90';
+  const PRICE_LABEL = 'R$ 19,90/mês';
+
+  const supabaseClient = supabase.createClient(
+    'https://pygmabkqslokkyjpuphi.supabase.co',
+    'sb_publishable_95kqVDzsE8MKnz44Eanqjw_WQyr-ADK'
+  );
+  let currentSession = null;
+  let pendingFileAfterAccess = null;
 
   const state = {
     fileName: '', fileBytes: null, pdfjsDoc: null, numPages: 0,
@@ -622,25 +656,138 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     drawing: false, strokePoints: [], hlStart: null,
     fontCache: {},
     wasEncrypted: false,
-    paidForCurrentExport: false, pendingBlob: null, pendingFilename: '',
+    pendingBlob: null, pendingFilename: '',
   };
-  function markDirty() { state.paidForCurrentExport = false; state.pendingBlob = null; }
+  function markDirty() { state.pendingBlob = null; }
+
+  // Limpa os parametros da URL se a pessoa acabou de voltar do Stripe Checkout.
+  if (location.search.includes('assinatura=')) {
+    history.replaceState({}, '', location.pathname);
+  }
 
   // ---------- FAQ accordion ----------
   document.querySelectorAll('.faq-q').forEach(btn => {
     btn.addEventListener('click', () => btn.parentElement.classList.toggle('open'));
   });
 
+  // ---------- Acesso: login por link mágico + assinatura ----------
+  function showAccessGate(html) {
+    els.accessGate.innerHTML = html;
+    els.accessGate.hidden = false;
+  }
+  function hideAccessGate() {
+    els.accessGate.hidden = true;
+    els.accessGate.innerHTML = '';
+  }
+
+  function renderLoginGate() {
+    showAccessGate(`
+      <div class="access-card">
+        <svg class="big" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 3l4 4L9 19l-5 1 1-5z"/></svg>
+        <h2>Entre para continuar</h2>
+        <p>Digite seu e-mail e enviamos um link de acesso — sem senha para lembrar.</p>
+        <input type="email" id="gateEmail" placeholder="seu@email.com">
+        <button class="btn-choose" id="gateSendLink" style="width:100%;">Enviar link de acesso</button>
+      </div>
+    `);
+    document.getElementById('gateSendLink').addEventListener('click', async () => {
+      const email = document.getElementById('gateEmail').value.trim();
+      if (!email) return;
+      const btn = document.getElementById('gateSendLink');
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      try {
+        const { error } = await supabaseClient.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+        if (error) throw error;
+        showAccessGate(`
+          <div class="access-card">
+            <svg class="big" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M22 6l-10 7L2 6"/></svg>
+            <h2>Verifique seu e-mail</h2>
+            <p>Enviamos um link para <b>${email}</b>. Toque nele para entrar — pode fechar esta aba.</p>
+          </div>
+        `);
+      } catch (err) {
+        alert('Não foi possível enviar o link agora. Tente novamente.');
+        btn.disabled = false; btn.textContent = 'Enviar link de acesso';
+      }
+    });
+  }
+
+  function renderSubscribeGate() {
+    showAccessGate(`
+      <div class="access-card">
+        <span class="access-trial-badge">7 dias grátis</span>
+        <h2>Comece a editar sem limites</h2>
+        <div class="access-price">${PRICE_LABEL}</div>
+        <p>Depois do teste grátis de 7 dias. Edite quantos PDFs quiser. Cancele quando quiser, sem multa.</p>
+        <button class="btn-choose" id="gateSubscribe" style="width:100%;">Começar teste grátis</button>
+      </div>
+    `);
+    document.getElementById('gateSubscribe').addEventListener('click', async () => {
+      const btn = document.getElementById('gateSubscribe');
+      btn.disabled = true; btn.textContent = 'Preparando…';
+      try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const res = await fetch('/api/create-checkout-session', {
+          method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json();
+        if (!res.ok || !data.url) throw new Error(data.error || 'Erro');
+        window.location.href = data.url;
+      } catch (err) {
+        alert('Não foi possível iniciar a assinatura agora. Tente novamente.');
+        btn.disabled = false; btn.textContent = 'Começar teste grátis';
+      }
+    });
+  }
+
+  function renderCheckingGate() {
+    showAccessGate(`<div class="access-card"><div class="pay-spinner"></div><p style="margin-top:10px;">Verificando seu acesso…</p></div>`);
+  }
+
+  // Chamado sempre que a pessoa tenta escolher/soltar um PDF. So deixa passar
+  // se estiver logada E com assinatura ativa (ou em teste).
+  async function tryStartEditing(file) {
+    pendingFileAfterAccess = file;
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    currentSession = session;
+    if (!session) { renderLoginGate(); return; }
+
+    renderCheckingGate();
+    try {
+      const res = await fetch('/api/subscription-status', { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const data = await res.json();
+      if (data.hasAccess) {
+        hideAccessGate();
+        loadFile(file);
+      } else {
+        renderSubscribeGate();
+      }
+    } catch (err) {
+      renderSubscribeGate();
+    }
+  }
+
+  // Se a pessoa acabou de voltar de um login por link ou do Stripe, o Supabase
+  // dispara esse evento sozinho quando reconhece a sessão na URL.
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    currentSession = session;
+    if (session && pendingFileAfterAccess) {
+      const file = pendingFileAfterAccess;
+      pendingFileAfterAccess = null;
+      tryStartEditing(file);
+    }
+  });
+
   // ---------- File loading ----------
   els.chooseBtn.addEventListener('click', () => els.fileInputLanding.click());
   els.chooseBtn2.addEventListener('click', () => els.fileInputLanding.click());
-  els.fileInputLanding.addEventListener('change', e => { if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]); });
+  els.fileInputLanding.addEventListener('change', e => { if (e.target.files && e.target.files[0]) tryStartEditing(e.target.files[0]); });
   els.uploadCard.addEventListener('dragover', e => { e.preventDefault(); els.uploadCard.classList.add('drag'); });
   els.uploadCard.addEventListener('dragleave', () => els.uploadCard.classList.remove('drag'));
   els.uploadCard.addEventListener('drop', e => {
     e.preventDefault();
     els.uploadCard.classList.remove('drag');
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) tryStartEditing(e.dataTransfer.files[0]);
   });
   els.resetBtn.addEventListener('click', () => location.reload());
 
@@ -741,10 +888,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
   function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
   // ---------- Font detection (keep the look of the original text) ----------
-  // pdf.js's getTextContent() returns a public, documented "styles" map (keyed by the same
-  // fontName as each text item) with a CSS-ready fontFamily ("serif" / "sans-serif" / "monospace").
-  // This is the same mechanism pdf.js itself uses to build its text-selection layer, so it's a
-  // reliable signal — unlike digging into internal font objects, which doesn't reflect the real font.
   function familyFromCss(cssFamily) {
     const f = (cssFamily || '').toLowerCase();
     if (f.includes('monospace')) return 'mono';
@@ -776,7 +919,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     if (family === 'mono') return '"Courier New", monospace';
     return 'Inter, sans-serif';
   }
-
 
   // ---------- Rendering ----------
   async function renderPageToCanvas(pageIndex, canvas, desiredCssWidth, rotationExtra) {
@@ -1208,157 +1350,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
   }
 
-  // ---------- Pagamento ----------
-  let payModalCtrl = null;
-
-  function openPaymentModal() {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'sheet-backdrop';
-    const modal = document.createElement('div');
-    modal.className = 'pay-modal';
-    document.body.appendChild(backdrop);
-    document.body.appendChild(modal);
-
-    let cancelHandler = null;
-    let pollTimer = null;
-    function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
-    function close() { stopPoll(); if (cancelHandler) cancelHandler(); backdrop.remove(); modal.remove(); if (payModalCtrl === ctrl) payModalCtrl = null; }
-    backdrop.addEventListener('click', close);
-
-    function render(html) {
-      modal.innerHTML = html;
-      const closeBtn = modal.querySelector('.pay-close');
-      if (closeBtn) closeBtn.addEventListener('click', close);
-    }
-
-    function renderForm() {
-      const d = state.customerDraft || {};
-      render(`
-        <button class="pay-close" aria-label="Fechar">✕</button>
-        <div class="pay-head">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--green);"><path d="M17 3l4 4L9 19l-5 1 1-5z"/></svg>
-          <h3>Só mais um passo</h3>
-        </div>
-        <p class="pay-desc">Insira seus dados antes de baixar o arquivo.</p>
-        <div class="pay-form">
-          <input placeholder="Nome completo" id="pfName" value="${d.name || ''}">
-          <input placeholder="E-mail" type="email" id="pfEmail" value="${d.email || ''}">
-          <input placeholder="Celular (WhatsApp)" id="pfPhone" value="${d.phone || ''}">
-          <input placeholder="CPF" id="pfDocument" value="${d.document || ''}">
-        </div>
-        <button class="btn-choose" id="pfContinue" style="display:block; width:100%; margin-top:6px;">Continuar e baixar meu PDF</button>
-      `);
-      modal.querySelector('#pfContinue').addEventListener('click', () => {
-        const val = id => modal.querySelector('#' + id).value.trim();
-        const customer = { name: val('pfName'), email: val('pfEmail'), phone: val('pfPhone'), document: val('pfDocument') };
-        const required = ['name', 'email', 'phone', 'document'];
-        const missing = required.filter(k => !customer[k]);
-        if (missing.length) { alert('Preencha todos os campos para continuar.'); return; }
-        state.customerDraft = customer;
-        startCheckout(customer);
-      });
-    }
-
-    function blobToBase64(blob) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    async function startCheckout(customer) {
-      render(`<div class="pay-spinner"></div><p style="text-align:center; font-size:13px; color:var(--ink-soft); margin-top:6px;">Preparando seu arquivo…</p>`);
-      try {
-        const fileBase64 = state.pendingBlob ? await blobToBase64(state.pendingBlob) : null;
-        const res = await fetch(`${PAYMENT_API_BASE}/api/orders`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customer, fileBase64, fileName: state.pendingFilename }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'order_failed');
-        renderCheckout(data);
-        pollTimer = setInterval(async () => {
-          try {
-            const r = await fetch(`${PAYMENT_API_BASE}/api/orders/${data.orderId}`);
-            const d = await r.json();
-            if (d.status === 'paid') {
-              stopPoll();
-              state.paidForCurrentExport = true;
-              triggerLocalDownload();
-              renderSuccess();
-            }
-          } catch (e) { /* tenta de novo no proximo ciclo */ }
-        }, 3000);
-      } catch (err) {
-        console.error(err);
-        renderError();
-      }
-    }
-
-    function renderCheckout(data) {
-      render(`
-        <button class="pay-close" aria-label="Fechar">✕</button>
-        <div class="pay-head">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--green);"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
-          <h3>Seu PDF está pronto!</h3>
-        </div>
-        <p class="pay-desc">Falta só confirmar o pagamento único abaixo para o download começar automaticamente — sem mensalidade, sem cadastro extra.</p>
-        <div class="pay-price">${PRICE_LABEL}</div>
-        <div class="pay-item">📄 pagamento único · seu arquivo é liberado sozinho assim que o Pix cai, geralmente em poucos segundos</div>
-        ${data.qrCodeImage ? `<img class="pay-qr" src="${data.qrCodeImage}" alt="QR code do Pix">` : ''}
-        ${data.pixCode ? `
-          <p style="font-size:12.5px; color:var(--ink-soft); text-align:center; margin:0 0 8px;">Aponte a câmera do app do seu banco para o QR Code, ou copie o código abaixo:</p>
-          <div class="pay-code-row">
-            <input type="text" readonly value="${String(data.pixCode).replace(/"/g, '&quot;')}" id="pixCodeInput">
-            <button class="mini-btn" id="pixCopyBtn">Copiar</button>
-          </div>` : '<p class="pay-desc">Abra o app do seu banco para concluir o pagamento.</p>'}
-        <div class="pay-status"><span class="pay-dot"></span> Aguardando confirmação — não feche esta tela</div>
-        <div class="pay-trust">
-          <span>🔒 Ambiente seguro</span>
-          <span>Pagamento processado por gateway parceiro — seus dados nunca passam pelo EDITA BRASIL</span>
-        </div>
-      `);
-      const copyBtn = modal.querySelector('#pixCopyBtn');
-      if (copyBtn) copyBtn.addEventListener('click', () => {
-        const input = modal.querySelector('#pixCodeInput');
-        input.select();
-        if (navigator.clipboard) navigator.clipboard.writeText(input.value).catch(() => {});
-        copyBtn.textContent = 'Copiado!';
-        setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1500);
-      });
-    }
-
-
-    function renderSuccess() {
-      render(`
-        <div class="pay-head" style="flex-direction:column; text-align:center;">
-          <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--green);"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
-          <h3>Pagamento confirmado!</h3>
-        </div>
-        <p class="pay-desc" style="text-align:center;">Seu download já deve ter começado. Se não começou, toque no botão abaixo.</p>
-        <button class="btn-choose" id="payRedownload" style="display:block; width:100%;">Baixar arquivo</button>
-      `);
-      modal.querySelector('#payRedownload').addEventListener('click', () => { triggerLocalDownload(); close(); });
-      setTimeout(close, 6000);
-    }
-
-    function renderError() {
-      render(`
-        <button class="pay-close" aria-label="Fechar">✕</button>
-        <p style="text-align:center; color:var(--red); font-weight:700; margin-bottom:8px;">Não foi possível iniciar o pagamento agora.</p>
-        <p class="pay-desc" style="text-align:center;">Verifique sua conexão e tente novamente em instantes.</p>
-        <button class="btn-choose" id="payRetry" style="display:block; width:100%;">Tentar novamente</button>
-      `);
-      modal.querySelector('#payRetry').addEventListener('click', renderForm);
-    }
-
-    renderForm();
-    const ctrl = { close, onCancel(fn) { cancelHandler = fn; } };
-    return ctrl;
-  }
-
+  // ---------- Download ----------
   function triggerLocalDownload() {
     if (!state.pendingBlob) return;
     const url = URL.createObjectURL(state.pendingBlob);
@@ -1370,7 +1362,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
   els.downloadBtn.addEventListener('click', async () => {
     if (!state.fileBytes) return;
-    if (state.paidForCurrentExport && state.pendingBlob) { triggerLocalDownload(); return; }
 
     els.downloadBtn.disabled = true;
     const originalLabel = els.downloadBtn.innerHTML;
@@ -1390,16 +1381,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
       const outBytes = await outDoc.save();
       state.pendingBlob = new Blob([outBytes], { type: 'application/pdf' });
       state.pendingFilename = `${(state.fileName || 'documento').replace(/\.pdf$/i, '')}-editado.pdf`;
+      triggerLocalDownload();
     } catch (err) {
       console.error(err);
-      alert('Não foi possível gerar o PDF editado. Tente novamente.');
-      els.downloadBtn.disabled = false;
-      els.downloadBtn.innerHTML = originalLabel;
-      return;
+      alert('Não foi possível gerar o PDF editado: ' + (err && err.message ? err.message : String(err)));
     }
     els.downloadBtn.disabled = false;
     els.downloadBtn.innerHTML = originalLabel;
-    payModalCtrl = openPaymentModal();
   });
 
   function hexToRgbLib(hex) {
