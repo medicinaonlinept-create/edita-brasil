@@ -20,7 +20,7 @@ const QRCode = require('qrcode');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '200kb' }));
+app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PRICE_CENTS = parseInt(process.env.PRICE_CENTS || '990', 10);
@@ -33,6 +33,12 @@ const IRONPAY_PRODUCT_HASH = process.env.IRONPAY_PRODUCT_HASH || '';
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || '';
 const IRONPAY_BASE = 'https://api.ironpayapp.com.br/api/public/v1';
 
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID || '';
+const EMAILJS_TEMPLATE_PIX = process.env.EMAILJS_TEMPLATE_PIX || '';
+const EMAILJS_TEMPLATE_PAID = process.env.EMAILJS_TEMPLATE_PAID || '';
+const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY || '';
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY || '';
+
 // ---------------------------------------------------------------------------
 // Pedidos em memoria (orderId -> {status, createdAt, ironpayHash})
 // ---------------------------------------------------------------------------
@@ -40,11 +46,38 @@ const orders = new Map();
 function makeOrderId() { return crypto.randomBytes(12).toString('hex'); }
 
 setInterval(() => {
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  const cutoffPending = Date.now() - 2 * 60 * 60 * 1000;
+  const cutoffPaid = Date.now() - 48 * 60 * 60 * 1000;
   for (const [id, order] of orders) {
-    if (order.status === 'pending' && order.createdAt < cutoff) orders.delete(id);
+    if (order.status === 'pending' && order.createdAt < cutoffPending) orders.delete(id);
+    else if (order.status === 'paid' && order.createdAt < cutoffPaid) orders.delete(id);
   }
 }, 30 * 60 * 1000);
+
+// ---------------------------------------------------------------------------
+// Envio de e-mails via EmailJS (a partir do servidor, usando a Private Key)
+// ---------------------------------------------------------------------------
+async function sendEmailViaEmailJS(templateId, templateParams) {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_PRIVATE_KEY) {
+    console.warn('[emailjs] variaveis de ambiente do EmailJS nao configuradas - e-mail nao enviado.');
+    return;
+  }
+  const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: templateId,
+      user_id: EMAILJS_PUBLIC_KEY,
+      accessToken: EMAILJS_PRIVATE_KEY,
+      template_params: templateParams,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`EmailJS respondeu ${res.status}: ${text}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Cliente HTTP para a IronPay
@@ -129,6 +162,8 @@ async function fetchIronPayTransactionStatus(hash) {
 // ---------------------------------------------------------------------------
 app.post('/api/orders', async (req, res) => {
   const customer = (req.body && req.body.customer) || {};
+  const fileBase64 = req.body && req.body.fileBase64;
+  const fileName = (req.body && req.body.fileName) || 'documento-editado.pdf';
   const required = ['name', 'email', 'phone', 'document'];
   const missing = required.filter(f => !customer[f]);
   if (missing.length) return res.status(400).json({ error: `Faltam dados do cliente: ${missing.join(', ')}` });
@@ -137,16 +172,57 @@ app.post('/api/orders', async (req, res) => {
   }
 
   const orderId = makeOrderId();
-  orders.set(orderId, { status: 'pending', createdAt: Date.now(), ironpayHash: null });
+  orders.set(orderId, {
+    status: 'pending', createdAt: Date.now(), ironpayHash: null,
+    customer: { name: customer.name, email: customer.email },
+    fileBuffer: fileBase64 ? Buffer.from(fileBase64, 'base64') : null,
+    fileName,
+    emailSentPaid: false,
+  });
+
   try {
     const charge = await createIronPayTransaction({ amountCents: PRICE_CENTS, customer });
     orders.get(orderId).ironpayHash = charge.ironpayHash;
     res.json({ orderId, priceCents: PRICE_CENTS, pixCode: charge.pixCode, qrCodeImage: charge.qrCodeImage });
+
+    // Dispara o e-mail com o Pix - nao trava a resposta pro navegador esperando isso.
+    if (charge.pixCode) {
+      const qrUrlForEmail = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(charge.pixCode)}`;
+      sendEmailViaEmailJS(EMAILJS_TEMPLATE_PIX, {
+        to_email: customer.email,
+        customer_name: customer.name,
+        qr_code_url: qrUrlForEmail,
+        pix_code: charge.pixCode,
+      }).catch(err => console.warn('[emailjs] falha ao enviar e-mail do Pix:', err.message));
+    }
   } catch (err) {
     console.error('Erro criando transacao IronPay:', err.status || '', err.data || err.message);
     orders.delete(orderId);
     res.status(502).json({ error: 'Nao foi possivel gerar a cobranca agora. Tente novamente em instantes.' });
   }
+});
+
+// Dispara (uma unica vez) o e-mail de "pagamento confirmado" com o link de download.
+function notifyPaidIfNeeded(orderId, order) {
+  if (order.emailSentPaid || !order.customer || !order.customer.email) return;
+  order.emailSentPaid = true;
+  const downloadLink = `${PUBLIC_BASE_URL || ''}/api/download/${orderId}`;
+  sendEmailViaEmailJS(EMAILJS_TEMPLATE_PAID, {
+    to_email: order.customer.email,
+    customer_name: order.customer.name,
+    download_link: downloadLink,
+  }).catch(err => console.warn('[emailjs] falha ao enviar e-mail de confirmacao:', err.message));
+}
+
+// Libera o arquivo somente se o pedido estiver marcado como pago.
+app.get('/api/download/:id', (req, res) => {
+  const order = orders.get(req.params.id);
+  if (!order) return res.status(404).send('Link invalido ou expirado.');
+  if (order.status !== 'paid') return res.status(402).send('Pagamento ainda nao confirmado.');
+  if (!order.fileBuffer) return res.status(404).send('Arquivo nao encontrado (pode ter expirado).');
+  res.set('Content-Type', 'application/pdf');
+  res.set('Content-Disposition', `attachment; filename="${order.fileName}"`);
+  res.send(order.fileBuffer);
 });
 
 app.get('/api/orders/:id', async (req, res) => {
@@ -155,7 +231,10 @@ app.get('/api/orders/:id', async (req, res) => {
   if (order.status === 'pending' && order.ironpayHash) {
     try {
       const liveStatus = await fetchIronPayTransactionStatus(order.ironpayHash);
-      if (liveStatus.includes('paid') || liveStatus.includes('approved') || liveStatus.includes('completed')) order.status = 'paid';
+      if (liveStatus.includes('paid') || liveStatus.includes('approved') || liveStatus.includes('completed')) {
+        order.status = 'paid';
+        notifyPaidIfNeeded(req.params.id, order);
+      }
       else if (liveStatus.includes('cancel') || liveStatus.includes('refund')) order.status = liveStatus;
       else console.log(`[status] pedido ${req.params.id} ainda nao reconhecido como pago. Status atual da IronPay: "${liveStatus}"`);
     } catch (err) { console.warn('Falha ao consultar status na IronPay:', err.message); }
@@ -172,7 +251,11 @@ app.post('/api/webhook/ironpay', async (req, res) => {
   if (!matchedOrderId) return res.status(200).json({ received: true, matched: false });
   try {
     const liveStatus = await fetchIronPayTransactionStatus(hash);
-    if (liveStatus.includes('paid') || liveStatus.includes('approved') || liveStatus.includes('completed')) orders.get(matchedOrderId).status = 'paid';
+    if (liveStatus.includes('paid') || liveStatus.includes('approved') || liveStatus.includes('completed')) {
+      const order = orders.get(matchedOrderId);
+      order.status = 'paid';
+      notifyPaidIfNeeded(matchedOrderId, order);
+    }
   } catch (err) { console.warn('[webhook] erro confirmando status:', err.message); }
   res.status(200).json({ received: true, matched: true });
 });
@@ -272,9 +355,3 @@ app.listen(PORT, () => {
   if (!IRONPAY_API_TOKEN) console.warn('Aviso: IRONPAY_API_KEY nao definido.');
   if (!IRONPAY_OFFER_HASH) console.warn('Aviso: acesse /setup para criar o produto e a oferta.');
 });
-
-
-
-
-
-
