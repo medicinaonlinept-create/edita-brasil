@@ -358,7 +358,6 @@
 </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <header class="topbar">
   <div class="brand">
@@ -598,6 +597,7 @@
 
 <div class="access-gate" id="accessGate" hidden></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script>
@@ -633,8 +633,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
   const HL_COLORS = ['#F5C518', '#0E8A46', '#1C3F94', '#D64545'];
   const isMobile = () => window.innerWidth <= 760;
 
-  // O site e o servidor agora moram juntos (mesmo endereco), entao nao
-  // precisamos apontar para nenhuma URL externa.
   const PAYMENT_API_BASE = '';
   const PRICE_LABEL = 'R$ 19,90/mês';
 
@@ -660,17 +658,14 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
   };
   function markDirty() { state.pendingBlob = null; }
 
-  // Limpa os parametros da URL se a pessoa acabou de voltar do Stripe Checkout.
   if (location.search.includes('assinatura=')) {
     history.replaceState({}, '', location.pathname);
   }
 
-  // ---------- FAQ accordion ----------
   document.querySelectorAll('.faq-q').forEach(btn => {
     btn.addEventListener('click', () => btn.parentElement.classList.toggle('open'));
   });
 
-  // ---------- Acesso: login por link mágico + assinatura ----------
   function showAccessGate(html) {
     els.accessGate.innerHTML = html;
     els.accessGate.hidden = false;
@@ -744,8 +739,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     showAccessGate(`<div class="access-card"><div class="pay-spinner"></div><p style="margin-top:10px;">Verificando seu acesso…</p></div>`);
   }
 
-  // Chamado sempre que a pessoa tenta escolher/soltar um PDF. So deixa passar
-  // se estiver logada E com assinatura ativa (ou em teste).
   async function tryStartEditing(file) {
     pendingFileAfterAccess = file;
     const { data: { session } } = await supabaseClient.auth.getSession();
@@ -767,8 +760,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
   }
 
-  // Se a pessoa acabou de voltar de um login por link ou do Stripe, o Supabase
-  // dispara esse evento sozinho quando reconhece a sessão na URL.
   supabaseClient.auth.onAuthStateChange((event, session) => {
     currentSession = session;
     if (session && pendingFileAfterAccess) {
@@ -778,7 +769,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
   });
 
-  // ---------- File loading ----------
   els.chooseBtn.addEventListener('click', () => els.fileInputLanding.click());
   els.chooseBtn2.addEventListener('click', () => els.fileInputLanding.click());
   els.fileInputLanding.addEventListener('change', e => { if (e.target.files && e.target.files[0]) tryStartEditing(e.target.files[0]); });
@@ -887,7 +877,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
   }
   function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
-  // ---------- Font detection (keep the look of the original text) ----------
   function familyFromCss(cssFamily) {
     const f = (cssFamily || '').toLowerCase();
     if (f.includes('monospace')) return 'mono';
@@ -920,7 +909,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     return 'Inter, sans-serif';
   }
 
-  // ---------- Rendering ----------
   async function renderPageToCanvas(pageIndex, canvas, desiredCssWidth, rotationExtra) {
     const page = await state.pdfjsDoc.getPage(pageIndex + 1);
     const baseViewport = page.getViewport({ scale: 1, rotation: rotationExtra || 0 });
@@ -1080,7 +1068,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  // ---------- Tools ----------
   els.tools.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => {
       state.activeTool = btn.dataset.tool;
@@ -1133,7 +1120,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     return row;
   }
 
-  // ---------- Page actions ----------
   els.rotateBtn.addEventListener('click', async () => {
     if (state.current === null) return;
     markDirty();
@@ -1156,7 +1142,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     updateStatus();
   }
 
-  // ---------- Overlay interactions ----------
   let textPopover = null, sheetBackdrop = null;
   els.overlayCanvas.addEventListener('pointerdown', e => {
     if (state.current === null) return;
@@ -1292,7 +1277,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTextPopover(); });
 
-  // ---------- Export ----------
   async function drawAnnotationsOnPage(pdfLibPage, list, getFont) {
     for (const item of list) {
       if (item.kind === 'text' || item.kind === 'textedit') {
@@ -1314,7 +1298,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
   }
 
-  // Normal path: copies the original PDF's own pages/text/fonts — best quality, smallest file.
   async function exportViaPdfLib(outDoc, getFont, order) {
     const srcDoc = await PDFLib.PDFDocument.load(state.fileBytes.slice(0));
     for (const idx of order) {
@@ -1326,9 +1309,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
   }
 
-  // Password path: pdf-lib cannot decrypt a protected PDF, so each page is rendered to a
-  // crisp image by pdf.js (which already handles the decryption) and rebuilt as a brand-new,
-  // unencrypted PDF — that's how the password is removed from the final file.
   async function exportViaRaster(outDoc, getFont, order) {
     const EXPORT_SCALE = 2.2;
     for (const idx of order) {
@@ -1350,7 +1330,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
   }
 
-  // ---------- Download ----------
   function triggerLocalDownload() {
     if (!state.pendingBlob) return;
     const url = URL.createObjectURL(state.pendingBlob);
