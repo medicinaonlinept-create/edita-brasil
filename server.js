@@ -71,14 +71,20 @@ async function ironpayRequest(path, { method = 'GET', body } = {}) {
 }
 
 async function createIronPayTransaction({ amountCents, customer }) {
+  // Endereco fixo do vendedor - a IronPay exige esses campos no cadastro do
+  // cliente, mas o formulario do site so pede nome, e-mail, telefone e CPF
+  // (igual ao link de checkout deles), entao completamos o resto aqui.
+  const FIXED_ADDRESS = {
+    street_name: 'Rua Luiz França', number: '526', complement: '',
+    neighborhood: 'Cajuru', city: 'Curitiba', state: 'PR', zip_code: '82900250',
+  };
   const body = {
     amount: amountCents,
     offer_hash: IRONPAY_OFFER_HASH,
     payment_method: 'pix',
     customer: {
       name: customer.name, email: customer.email, phone_number: customer.phone, document: customer.document,
-      street_name: customer.street, number: customer.number, complement: customer.complement || '',
-      neighborhood: customer.neighborhood, city: customer.city, state: customer.state, zip_code: customer.zipCode,
+      ...FIXED_ADDRESS,
     },
     cart: [{
       product_hash: IRONPAY_PRODUCT_HASH, title: 'EDITA BRASIL - Edicao de 1 arquivo PDF', cover: 'https://placehold.co/512x512/0E8A46/FFFFFF?text=EDITA+BRASIL',
@@ -123,7 +129,7 @@ async function fetchIronPayTransactionStatus(hash) {
 // ---------------------------------------------------------------------------
 app.post('/api/orders', async (req, res) => {
   const customer = (req.body && req.body.customer) || {};
-  const required = ['name', 'email', 'phone', 'document', 'street', 'number', 'neighborhood', 'city', 'state', 'zipCode'];
+  const required = ['name', 'email', 'phone', 'document'];
   const missing = required.filter(f => !customer[f]);
   if (missing.length) return res.status(400).json({ error: `Faltam dados do cliente: ${missing.join(', ')}` });
   if (!IRONPAY_OFFER_HASH || !IRONPAY_PRODUCT_HASH) {
@@ -266,3 +272,9 @@ app.listen(PORT, () => {
   if (!IRONPAY_API_TOKEN) console.warn('Aviso: IRONPAY_API_KEY nao definido.');
   if (!IRONPAY_OFFER_HASH) console.warn('Aviso: acesse /setup para criar o produto e a oferta.');
 });
+
+
+
+
+
+
