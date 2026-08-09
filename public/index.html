@@ -1236,54 +1236,22 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
       render(`
         <button class="pay-close" aria-label="Fechar">✕</button>
         <div class="pay-head">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--green);"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
-          <h3>Dados para o pagamento</h3>
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--green);"><path d="M17 3l4 4L9 19l-5 1 1-5z"/></svg>
+          <h3>Só mais um passo</h3>
         </div>
-        <p class="pay-desc">Usados só para gerar a cobrança e a nota do seu pagamento.</p>
+        <p class="pay-desc">Insira seus dados antes de baixar o arquivo.</p>
         <div class="pay-form">
           <input placeholder="Nome completo" id="pfName" value="${d.name || ''}">
           <input placeholder="E-mail" type="email" id="pfEmail" value="${d.email || ''}">
           <input placeholder="Celular (WhatsApp)" id="pfPhone" value="${d.phone || ''}">
           <input placeholder="CPF" id="pfDocument" value="${d.document || ''}">
-          <div class="pay-form-row">
-            <input placeholder="CEP" id="pfZip" value="${d.zipCode || ''}">
-            <button type="button" class="mini-btn" id="pfZipLookup">Buscar</button>
-          </div>
-          <input placeholder="Rua" id="pfStreet" value="${d.street || ''}">
-          <div class="pay-form-row">
-            <input placeholder="Número" id="pfNumber" value="${d.number || ''}">
-            <input placeholder="Complemento (opcional)" id="pfComplement" value="${d.complement || ''}">
-          </div>
-          <input placeholder="Bairro" id="pfNeighborhood" value="${d.neighborhood || ''}">
-          <div class="pay-form-row">
-            <input placeholder="Cidade" id="pfCity" value="${d.city || ''}">
-            <input placeholder="UF" id="pfState" maxlength="2" style="max-width:64px;" value="${d.state || ''}">
-          </div>
         </div>
-        <button class="btn-choose" id="pfContinue" style="display:block; width:100%; margin-top:6px;">Continuar para o pagamento</button>
+        <button class="btn-choose" id="pfContinue" style="display:block; width:100%; margin-top:6px;">Continuar e baixar meu PDF</button>
       `);
-      modal.querySelector('#pfZipLookup').addEventListener('click', async () => {
-        const cep = modal.querySelector('#pfZip').value.replace(/\D/g, '');
-        if (cep.length !== 8) return;
-        try {
-          const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-          const j = await r.json();
-          if (!j.erro) {
-            modal.querySelector('#pfStreet').value = j.logradouro || '';
-            modal.querySelector('#pfNeighborhood').value = j.bairro || '';
-            modal.querySelector('#pfCity').value = j.localidade || '';
-            modal.querySelector('#pfState').value = j.uf || '';
-          }
-        } catch (e) { /* CEP nao encontrado ou sem internet - a pessoa preenche manualmente */ }
-      });
       modal.querySelector('#pfContinue').addEventListener('click', () => {
         const val = id => modal.querySelector('#' + id).value.trim();
-        const customer = {
-          name: val('pfName'), email: val('pfEmail'), phone: val('pfPhone'), document: val('pfDocument'),
-          zipCode: val('pfZip'), street: val('pfStreet'), number: val('pfNumber'), complement: val('pfComplement'),
-          neighborhood: val('pfNeighborhood'), city: val('pfCity'), state: val('pfState'),
-        };
-        const required = ['name', 'email', 'phone', 'document', 'street', 'number', 'neighborhood', 'city', 'state', 'zipCode'];
+        const customer = { name: val('pfName'), email: val('pfEmail'), phone: val('pfPhone'), document: val('pfDocument') };
+        const required = ['name', 'email', 'phone', 'document'];
         const missing = required.filter(k => !customer[k]);
         if (missing.length) { alert('Preencha todos os campos para continuar.'); return; }
         state.customerDraft = customer;
@@ -1292,7 +1260,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
     }
 
     async function startCheckout(customer) {
-      render(`<div class="pay-spinner"></div><p style="text-align:center; font-size:13px; color:var(--ink-soft); margin-top:6px;">Gerando cobrança segura…</p>`);
+      render(`<div class="pay-spinner"></div><p style="text-align:center; font-size:13px; color:var(--ink-soft); margin-top:6px;">Preparando seu arquivo…</p>`);
       try {
         const res = await fetch(`${PAYMENT_API_BASE}/api/orders`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer }),
@@ -1322,22 +1290,23 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
       render(`
         <button class="pay-close" aria-label="Fechar">✕</button>
         <div class="pay-head">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--green);"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
-          <h3>Finalizar edição</h3>
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--green);"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+          <h3>Seu PDF está pronto!</h3>
         </div>
-        <p class="pay-desc">Seu arquivo já está pronto. Pague com Pix para liberar o download:</p>
+        <p class="pay-desc">Falta só confirmar o pagamento único abaixo para o download começar automaticamente — sem mensalidade, sem cadastro extra.</p>
         <div class="pay-price">${PRICE_LABEL}</div>
-        <div class="pay-item">📄 1 arquivo PDF editado · download automático assim que o Pix for confirmado</div>
+        <div class="pay-item">📄 pagamento único · seu arquivo é liberado sozinho assim que o Pix cai, geralmente em poucos segundos</div>
         ${data.qrCodeImage ? `<img class="pay-qr" src="${data.qrCodeImage}" alt="QR code do Pix">` : ''}
         ${data.pixCode ? `
+          <p style="font-size:12.5px; color:var(--ink-soft); text-align:center; margin:0 0 8px;">Aponte a câmera do app do seu banco para o QR Code, ou copie o código abaixo:</p>
           <div class="pay-code-row">
             <input type="text" readonly value="${String(data.pixCode).replace(/"/g, '&quot;')}" id="pixCodeInput">
             <button class="mini-btn" id="pixCopyBtn">Copiar</button>
           </div>` : '<p class="pay-desc">Abra o app do seu banco para concluir o pagamento.</p>'}
-        <div class="pay-status"><span class="pay-dot"></span> Aguardando confirmação do pagamento…</div>
+        <div class="pay-status"><span class="pay-dot"></span> Aguardando confirmação — não feche esta tela</div>
         <div class="pay-trust">
           <span>🔒 Ambiente seguro</span>
-          <span>Pagamento processado por gateway parceiro — seus dados de cartão nunca passam pelo EDITA BRASIL</span>
+          <span>Pagamento processado por gateway parceiro — seus dados nunca passam pelo EDITA BRASIL</span>
         </div>
       `);
       const copyBtn = modal.querySelector('#pixCopyBtn');
@@ -1349,6 +1318,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
         setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1500);
       });
     }
+
 
     function renderSuccess() {
       render(`
