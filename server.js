@@ -16,6 +16,7 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const QRCode = require('qrcode');
 
 const app = express();
 app.use(cors());
@@ -92,18 +93,29 @@ async function createIronPayTransaction({ amountCents, customer }) {
   const data = await ironpayRequest('/transactions', { method: 'POST', body });
   const hash = data.hash || data.transaction_hash || (data.data && data.data.hash) || null;
   const pix = data.pix || (data.data && data.data.pix) || {};
-  const pixCode = pix.qrcode || pix.qr_code || pix.code || pix.emv || data.qr_code || data.pix_qrcode || null;
-  const qrCodeImage = pix.qrcode_image || pix.qr_code_base64 || pix.image || data.qr_code_image || null;
+  const pixCode = pix.pix_qr_code || pix.qrcode || pix.qr_code || pix.code || pix.emv || data.qr_code || data.pix_qrcode || null;
+  let qrCodeImage = pix.qrcode_image || pix.qr_code_base64 || pix.image || data.qr_code_image || null;
 
   if (!hash) console.warn('[ironpay] nao encontrei "hash" na resposta da transacao:', JSON.stringify(data));
   if (!pixCode) console.warn('[ironpay] nao encontrei o codigo PIX na resposta da transacao:', JSON.stringify(data));
+
+  // A IronPay nem sempre manda uma imagem de QR Code pronta - quando isso
+  // acontece, geramos a imagem aqui mesmo a partir do codigo copia-e-cola.
+  if (!qrCodeImage && pixCode) {
+    try {
+      qrCodeImage = await QRCode.toDataURL(pixCode, { margin: 1, width: 300 });
+    } catch (err) {
+      console.warn('[ironpay] falha ao gerar QR Code localmente:', err.message);
+    }
+  }
 
   return { ironpayHash: hash, pixCode, qrCodeImage, raw: data };
 }
 
 async function fetchIronPayTransactionStatus(hash) {
   const data = await ironpayRequest(`/transactions/${hash}`);
-  return (data.status || (data.data && data.data.status) || '').toString().toLowerCase();
+  const status = data.payment_status || data.status || (data.data && (data.data.payment_status || data.data.status)) || '';
+  return status.toString().toLowerCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -137,8 +149,9 @@ app.get('/api/orders/:id', async (req, res) => {
   if (order.status === 'pending' && order.ironpayHash) {
     try {
       const liveStatus = await fetchIronPayTransactionStatus(order.ironpayHash);
-      if (liveStatus === 'paid') order.status = 'paid';
-      else if (liveStatus === 'canceled' || liveStatus === 'refunded') order.status = liveStatus;
+      if (liveStatus.includes('paid') || liveStatus.includes('approved') || liveStatus.includes('completed')) order.status = 'paid';
+      else if (liveStatus.includes('cancel') || liveStatus.includes('refund')) order.status = liveStatus;
+      else console.log(`[status] pedido ${req.params.id} ainda nao reconhecido como pago. Status atual da IronPay: "${liveStatus}"`);
     } catch (err) { console.warn('Falha ao consultar status na IronPay:', err.message); }
   }
   res.json({ status: order.status });
@@ -153,7 +166,7 @@ app.post('/api/webhook/ironpay', async (req, res) => {
   if (!matchedOrderId) return res.status(200).json({ received: true, matched: false });
   try {
     const liveStatus = await fetchIronPayTransactionStatus(hash);
-    if (liveStatus === 'paid') orders.get(matchedOrderId).status = 'paid';
+    if (liveStatus.includes('paid') || liveStatus.includes('approved') || liveStatus.includes('completed')) orders.get(matchedOrderId).status = 'paid';
   } catch (err) { console.warn('[webhook] erro confirmando status:', err.message); }
   res.status(200).json({ received: true, matched: true });
 });
