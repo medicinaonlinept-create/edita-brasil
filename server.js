@@ -80,7 +80,7 @@ async function createIronPayTransaction({ amountCents, customer }) {
       neighborhood: customer.neighborhood, city: customer.city, state: customer.state, zip_code: customer.zipCode,
     },
     cart: [{
-      product_hash: IRONPAY_PRODUCT_HASH, title: 'EDITA BRASIL - Edicao de 1 arquivo PDF', cover: null,
+      product_hash: IRONPAY_PRODUCT_HASH, title: 'EDITA BRASIL - Edicao de 1 arquivo PDF', cover: 'https://placehold.co/512x512/0E8A46/FFFFFF?text=EDITA+BRASIL',
       price: amountCents, quantity: 1, operation_type: 1, tangible: false,
     }],
     expire_in_days: 1,
@@ -171,7 +171,9 @@ app.post('/api/setup/create-product', async (req, res) => {
     const prod = await ironpayRequest('/products', {
       method: 'POST',
       body: {
-        title: 'EDITA BRASIL - Edicao de PDF', cover: null, sale_page: PUBLIC_BASE_URL || 'https://editabrasil.com.br',
+        title: 'EDITA BRASIL - Edicao de PDF',
+        cover: 'https://placehold.co/512x512/0E8A46/FFFFFF?text=EDITA+BRASIL',
+        sale_page: PUBLIC_BASE_URL || 'https://editabrasil.com.br',
         payment_type: 1, product_type: 'digital', delivery_type: 1, id_category: 1, amount: PRICE_CENTS,
       },
     });
@@ -180,7 +182,7 @@ app.post('/api/setup/create-product', async (req, res) => {
 
     const offer = await ironpayRequest(`/products/${productHash}/offers`, {
       method: 'POST',
-      body: { title: 'Edicao unica de PDF', cover: null, amount: PRICE_CENTS },
+      body: { title: 'Edicao unica de PDF', cover: 'https://placehold.co/512x512/0E8A46/FFFFFF?text=EDITA+BRASIL', amount: PRICE_CENTS },
     });
     const offerHash = offer.hash || (offer.data && offer.data.hash);
     if (!offerHash) return res.status(500).json({ error: 'A IronPay respondeu, mas nao encontrei o "hash" da oferta.', raw: offer });
