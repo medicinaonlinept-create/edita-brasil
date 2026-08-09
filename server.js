@@ -110,7 +110,34 @@ app.get('/api/subscription-status', async (req, res) => {
   const { data, error } = await supabaseAdmin.from('subscriptions').select('*').eq('user_id', user.id).maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
 
-  const status = data ? data.status : 'none';
+  let status = data ? data.status : 'none';
+
+  // Se ainda nao sabemos de uma assinatura ativa por aqui, confere direto com
+  // o Stripe (nao depende so do webhook ter funcionado).
+  if ((status === 'none' || status === 'canceled') && stripe && user.email) {
+    try {
+      const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+      if (customers.data.length) {
+        const subs = await stripe.subscriptions.list({ customer: customers.data[0].id, status: 'all', limit: 1 });
+        if (subs.data.length) {
+          const sub = subs.data[0];
+          status = sub.status;
+          if (supabaseAdmin) {
+            await supabaseAdmin.from('subscriptions').upsert({
+              user_id: user.id, email: user.email,
+              stripe_customer_id: customers.data[0].id, stripe_subscription_id: sub.id,
+              status: sub.status,
+              current_period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id' });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[stripe] falha ao conferir assinatura diretamente:', err.message);
+    }
+  }
+
   const hasAccess = status === 'trialing' || status === 'active';
   res.json({ status, hasAccess });
 });
