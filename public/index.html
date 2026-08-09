@@ -1259,11 +1259,22 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
       });
     }
 
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
     async function startCheckout(customer) {
       render(`<div class="pay-spinner"></div><p style="text-align:center; font-size:13px; color:var(--ink-soft); margin-top:6px;">Preparando seu arquivo…</p>`);
       try {
+        const fileBase64 = state.pendingBlob ? await blobToBase64(state.pendingBlob) : null;
         const res = await fetch(`${PAYMENT_API_BASE}/api/orders`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer, fileBase64, fileName: state.pendingFilename }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'order_failed');
