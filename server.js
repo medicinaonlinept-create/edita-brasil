@@ -349,6 +349,17 @@ app.get('/setup', (req, res) => {
 </body></html>`);
 });
 
+// ---------------------------------------------------------------------------
+// Sitelinks / URLs alternativas para o Google Ads.
+// Qualquer endereço que nao seja de API (ex: /1, /2, /recursos, /curriculo)
+// mostra o mesmo site - assim da para usar varias URLs diferentes nos
+// sitelinks do anuncio, todas levando para a mesma pagina.
+// ---------------------------------------------------------------------------
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path === '/setup') return next();
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`EDITA BRASIL rodando na porta ${PORT}`);
